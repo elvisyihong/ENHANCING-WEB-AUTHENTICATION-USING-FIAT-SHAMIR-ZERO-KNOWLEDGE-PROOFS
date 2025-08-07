@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Home</title>
+    <link rel="stylesheet" href="../../static/style.css">
+</head>
+<body>
+<div class="container">
+    <h2>Login Successful!</h2>
+    <p>Welcome, <strong>{{ user.username }}</strong></p>
+
+    <form method="post" action="{% url 'logout' %}">
+        {% csrf_token %}
+        <button type="submit">Logout</button>
+    </form>
+</div>
+</body>
+</html>

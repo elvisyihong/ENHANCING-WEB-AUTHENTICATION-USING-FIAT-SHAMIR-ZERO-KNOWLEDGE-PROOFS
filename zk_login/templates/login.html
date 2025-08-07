@@ -1,0 +1,129 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Login</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+</head>
+<body>
+<div class="container">
+    <h1>Login Page</h1>
+
+    <form method="post" id="combined-login-form">
+        {% csrf_token %}
+        <label for="username">Username</label><br>
+        <input type="text" name="username" id="username" required><br><br>
+
+        <label for="password">Password</label><br>
+        <input type="password" name="password" id="password" required><br><br>
+
+        <label for="auth_type">Authentication Type</label><br>
+        <select name="auth_type" id="auth_type" required>
+            <option value="django">Django Default</option>
+            <option value="plaintext">Plaintext</option>
+            <option value="zk">Zero-Knowledge Proof</option>
+        </select><br><br>
+        <button type="submit">Login</button>
+    </form>
+    <a href="{% url 'register' %}">
+        <button>Register Page</button>
+    </a>
+    <p id="result" style="color: red;">{{ error }}</p>
+
+</div>
+<script>
+    const G = 2n;
+    const P = BigInt("0xFFFFFFFEFFFFFC2F");
+
+    function modPow(base, exp, mod) {
+        let result = 1n;
+        base %= mod;
+        while (exp > 0n) {
+            if (exp % 2n === 1n) result = (result * base) % mod;
+            base = (base * base) % mod;
+            exp >>= 1n;
+        }
+        return result;
+    }
+
+    async function sha256ToBigInt(input) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(input.toString());
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return BigInt('0x' + hashHex);
+    }
+
+    document.getElementById('combined-login-form').onsubmit = async (e) => {
+        e.preventDefault();
+
+        const authType = document.getElementById('auth_type').value;
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+
+        // Start measuring ZKP time
+        const zkStart = performance.now();
+        console.log("===== LOGIN START =====");
+        console.log("Auth Type:", authType);
+        console.log("Username:", username);
+        console.log("Password:", password);
+
+        if (authType === 'zk') {
+            const secret = await sha256ToBigInt(password);
+            const r = BigInt(Math.floor(Math.random() * 1e12)); // stronger randomness
+            const commitment = modPow(G, r, P);
+            console.log("===== Calculate In Client Side =====");
+            console.log("P(Large Prime Number):", P.toString());
+            console.log("G(Fixed Generator):", G.toString());
+            console.log("S(Password hashed to BigInt (SHA256)):", secret.toString());
+            console.log("R(Random nonce):", r.toString());
+            console.log("Commitment (G^R mod P):", commitment.toString());
+
+            // Step 1: Ask server for challenge (nonce)
+            const challengeRes = await fetch(`/zk-challenge/?username=${encodeURIComponent(username)}&commitment=${commitment}`);
+            const challengeJson = await challengeRes.json();
+            if (!challengeJson.success) {
+                console.error("Challenge request failed:", challengeJson.error);
+                document.getElementById('result').innerText = challengeJson.error || 'Challenge failed';
+                return;
+            }
+            const challenge = BigInt(challengeJson.challenge); // comes from server
+            const response = r + challenge * secret;
+            console.log("C(Challenge) received from server:", challenge.toString());
+            console.log("Response (R + C * S):", response.toString());
+
+            // End ZKP timing
+            const zkEnd = performance.now();
+            const zkTimeMs = zkEnd - zkStart;
+            console.log(`ZK Proof Generation Time: ${zkTimeMs.toFixed(2)} ms`);
+
+            // Step 2: Send proof with server-provided challenge
+            const formData = new FormData();
+            formData.append('username', username);
+            formData.append('commitment', commitment.toString());
+            formData.append('response', response.toString());
+            formData.append('auth_type', 'zk');
+
+            const res = await fetch("", {method: 'POST', body: formData});
+            const json = await res.json();
+            const resultEl = document.getElementById('result');
+            console.log("===== Send Username, Commitment, Response to server =====");
+            console.log("Server final response:", json);
+
+            if (json.success) {
+                console.log("✅ Login successful");
+                window.location.href = "/home/";
+            } else {
+                console.error("❌ Login failed:", json.error);
+                resultEl.style.color = 'red';
+                resultEl.innerText = json.error || 'Login failed';
+            }
+        } else {
+            e.target.submit(); // for Django/plaintext
+        }
+    };
+</script>
+</body>
+</html>

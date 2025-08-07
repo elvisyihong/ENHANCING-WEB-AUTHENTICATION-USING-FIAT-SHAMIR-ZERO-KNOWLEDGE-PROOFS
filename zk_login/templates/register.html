@@ -1,0 +1,93 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Register</title>
+    <link rel="stylesheet" href="{% static 'style.css' %}">
+</head>
+<body>
+<div class="container">
+    <h1>Register Page</h1>
+
+    <form id="registerForm">
+        {% csrf_token %}
+        <label for="username">Username:</label><br>
+        <input type="text" id="username" required><br><br>
+
+        <label for="password">Password / Secret:</label><br>
+        <input type="password" id="password" required><br><br>
+
+        <label for="auth_type">Authentication Type:</label><br>
+        <select id="auth_type" required>
+            <option value="django">Django Default</option>
+            <option value="plaintext">Plaintext</option>
+            <option value="zk">Zero-Knowledge Proof</option>
+        </select><br><br>
+
+        <button type="submit">Register</button>
+    </form>
+    <a href="{% url 'login' %}">
+        <button>Login Page</button>
+    </a>
+    <p id="status"></p>
+</div>
+</body>
+<script>
+    const G = 2n;
+    const P = BigInt("0xFFFFFFFEFFFFFC2F");
+
+    function modPow(base, exponent, mod) {
+        let result = 1n;
+        base %= mod;
+        while (exponent > 0n) {
+            if (exponent % 2n === 1n) result = (result * base) % mod;
+            base = (base * base) % mod;
+            exponent >>= 1n;
+        }
+        return result;
+    }
+
+    async function sha256ToBigInt(str) {
+        const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+        const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        return BigInt('0x' + hex);
+    }
+
+    document.getElementById("registerForm").onsubmit = async (e) => {
+        e.preventDefault();
+
+        const authType = document.getElementById("auth_type").value;
+        const username = document.getElementById("username").value;
+        const password = document.getElementById("password").value;
+
+        console.log("===== Registration Start =====");
+        console.log("Auth Type:", authType);
+        console.log("Username:", username);
+        console.log("Password:", password);
+
+        const formData = new FormData();
+        formData.append("auth_type", authType);
+        formData.append("username", username);
+
+        if (authType === "zk") {
+            const secretInt = await sha256ToBigInt(password);
+            const zk_pubkey = modPow(G, secretInt, P);
+            console.log("===== Calculate In Client Side =====");
+            console.log("P(Large Prime Number):", P.toString());
+            console.log("G(Fixed Generator):", G.toString());
+            console.log("S(Password hashed to BigInt (SHA256)):", secretInt.toString());
+            console.log("Computed zk_pubkey (G^S mod P):", zk_pubkey.toString());
+            console.log("===== Send zk_pubkey to server =====");
+            formData.append("zk_pubkey", zk_pubkey.toString());
+        } else {
+            formData.append("password", password);
+            console.log("Plain password submitted for:", authType);
+        }
+        const res = await fetch("", {method: "POST", body: formData});
+        const json = await res.json();
+        console.log("Server response:", json);
+        document.getElementById("status").innerText = json.success ? "Registered!" : "Error: " + json.error;
+    };
+</script>
+</html>
